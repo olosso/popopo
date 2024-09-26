@@ -1,0 +1,72 @@
+#!/home/olli/mambaforge/envs/async/bin/python3
+import socket
+import argparse
+import asyncio
+import logging
+import pathlib
+
+logging.basicConfig(
+    filename="client.log",
+    format="%(asctime)s - %(levelname)s: %(message)s",
+    level=logging.INFO,
+)
+
+
+async def send(command, description):
+    dir = str(pathlib.Path(__file__).parent.resolve()) + "/"
+
+    if command == "start":
+        description = f" --description '{description}'" if description else ""
+        await asyncio.create_subprocess_shell(
+            "python3 " + dir + "popopo_server.py" + description
+        )
+        return
+
+    socket_path = dir + "popopo_socket"
+    client_socket = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    client_socket.connect(socket_path)
+
+    try:
+        description = f" --description '{description}'" if description else ""
+        command = f"{command} {description}"
+        client_socket.sendall(command.encode("utf-8"))
+        logging.info(f"Sent command {command}.")
+
+        data = client_socket.recv(1024)
+        print(f"{data.decode()}")
+        logging.info("Received response.")
+    finally:
+        client_socket.shutdown(socket.SHUT_RD)
+        client_socket.close()
+        logging.info("Client closing connection.")
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter)
+    choices = ["start", "kill", "pause", "continue", "reset", "set", "skip", "time"]
+    help_texts = [
+        "Start a popopo timer.",
+        "Terminate current popopo timer.",
+        "Pause current timer.",
+        "Unpause current timer.",
+        "Set current timer to zero.",
+        "Set or ask for current description." "Skip current interval.",
+        "Print the current elapsed time.",
+    ]
+
+    longest = sorted([len(choice) for choice in choices], reverse=True)[0]
+    parser.add_argument(
+        "action",
+        choices=choices,
+        help="\n".join(
+            [
+                f"{choice:<{longest}} - {text}"
+                for (choice, text) in zip(choices, help_texts)
+            ]
+        ),
+        type=str,
+    )
+    parser.add_argument("-d", "--description", type=str, help="Set popopo description.")
+
+    args = parser.parse_args()
+    asyncio.run(send(args.action, args.description))
